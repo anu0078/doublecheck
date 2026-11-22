@@ -1,0 +1,27 @@
+# Render Blueprint: Render reads this file and sets everything up.
+# Render dashboard -> New -> Blueprint -> pick this repo -> fill the 2 secret keys -> Apply.
+services:
+  - type: web
+    name: doublecheck
+    runtime: python
+    plan: free
+    region: singapore              # closest Render region to India
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --no-access-log
+    healthCheckPath: /api/health
+    autoDeploy: true               # every push to GitHub redeploys
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: GEMINI_API_KEY        # you paste this in the Render dashboard (never in git)
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN    # you paste this in the Render dashboard (never in git)
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-flash-latest
+      - key: TRUST_PROXY           # Render sits in front of the app; read the visitor's real IP
+        value: "true"
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      - key: FAMILY_DB_PATH
+        value: family.db
