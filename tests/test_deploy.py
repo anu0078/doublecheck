@@ -109,3 +109,20 @@ def test_bad_bot_token_does_not_crash_site(monkeypatch):
     with TestClient(main.app) as c:
         assert c.get("/api/health").status_code == 200
         assert c.post("/telegram/webhook", json=UPDATE).status_code == 404
+
+
+def test_responses_are_gzip_compressed(client):
+    r = client.get("/", headers={"Accept-Encoding": "gzip"})
+    assert r.headers.get("content-encoding") == "gzip"
+    r = client.post("/api/ai-guard", json={"text": "x " * 400}, headers={"Accept-Encoding": "gzip"})
+    assert r.headers.get("content-encoding") == "gzip"
+
+
+def test_website_files_cached_but_api_never(client):
+    page = client.get("/script.js")
+    assert page.headers["cache-control"] == "public, max-age=300"
+    etag = page.headers["etag"]
+    again = client.get("/script.js", headers={"If-None-Match": etag})
+    assert again.status_code == 304 and again.content == b""
+    api = client.post("/api/ai-guard", json={"text": "hello"})
+    assert api.headers["cache-control"] == "no-store"

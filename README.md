@@ -1,4 +1,6 @@
-# DoubleCheck — backend
+# DoubleCheck
+
+[![tests](https://github.com/anu0078/doublecheck/actions/workflows/tests.yml/badge.svg)](https://github.com/anu0078/doublecheck/actions/workflows/tests.yml)
 
 Scam protection for Indian users, built for people like our parents who get fake UPI
 requests and "digital arrest" calls.
@@ -29,8 +31,9 @@ uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log
 # Telegram bot (separate terminal)
 python bot.py
 
-# Tests
-pytest -q
+# Tests and lint (also run automatically on every push by GitHub Actions)
+pytest
+ruff check .
 ```
 
 `--no-access-log` matters: it stops uvicorn from printing every request line. The app logs
@@ -274,5 +277,9 @@ demo_samples.json  Demo inputs with expected results
   the child will receive and must tap "Yes, I agree" before any code exists. Codes are
   6 characters, single-use, expire in 15 minutes, and guessing is limited to 5 tries.
   The child never sees the message, and either side can `/stopfamily`.
+- **Fast and light on mobile data.** The rules answer in about 1-3 ms. Gemini only adds
+  detail and is capped at 8 s, and a call the rules already mark DANGEROUS skips it entirely.
+  Regexes are compiled once, the Gemini client is reused, responses are gzip-compressed, and
+  website files are held in memory and cached by the phone with ETags (304 Not Modified).
 - **Never crash the demo.** No key, a slow (more than 8 s) or failing Gemini, or bad JSON all
   fall back to the rules-only result.

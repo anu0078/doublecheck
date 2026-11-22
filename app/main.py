@@ -2,23 +2,32 @@
 
 Run:  uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log
 """
+import hashlib
 import logging
 import time
 from contextlib import asynccontextmanager
+from functools import lru_cache
 from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse, Response
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import llm, services, telegram_webhook
 from app.config import MAX_BODY_BYTES, RATE_LIMIT_PER_MINUTE, settings
 from app.ratelimit import SlidingWindowRateLimiter
 from app.schemas import (
-    AIGuardIn, AIGuardResult, CallCopilotIn, CallCopilotResult, ErrorResult,
-    HealthResult, PayGuardIn, PayGuardResult,
+    AIGuardIn,
+    AIGuardResult,
+    CallCopilotIn,
+    CallCopilotResult,
+    ErrorResult,
+    HealthResult,
+    PayGuardIn,
+    PayGuardResult,
 )
 
 # Privacy: we log ONLY endpoint, risk level and response time. Never message text.
@@ -76,16 +85,23 @@ async def guard_requests(request: Request, call_next):
 
     # 2) rate limit per IP. /api/health is exempt so the host's health checks
     #    and uptime pings can never lock the app out.
-    if path.startswith("/api/") and path != "/api/health" and request.method != "OPTIONS":
-        if not rate_limiter.allow(client_ip(request)):
-            return error(429, "Too many requests. Please wait a minute.", "RATE_LIMITED")
+    is_api = path.startswith("/api/")
+    rate_limited = is_api and path != "/api/health" and request.method != "OPTIONS"
+    if rate_limited and not rate_limiter.allow(client_ip(request)):
+        return error(429, "Too many requests. Please wait a minute.", "RATE_LIMITED")
 
     response = await call_next(request)
-    # 3) results are personal: tell browsers/proxies not to cache them
-    response.headers["Cache-Control"] = "no-store"
+    # 3) API results are personal: never cache them. Website files set their own
+    #    short cache (see frontend section) so phones don't re-download them.
+    if is_api or path.startswith("/telegram/"):
+        response.headers["Cache-Control"] = "no-store"
     response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 
+
+# Compress responses over 500 bytes (the website and long results shrink ~70-80%,
+# which matters on slow mobile data).
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # Added last = outermost, so even 429/413 responses carry CORS headers.
 app.add_middleware(
@@ -171,8 +187,8 @@ FRONTEND_FILES = {"index.html": "text/html; charset=utf-8",
 
 
 @app.get("/", include_in_schema=False)
-async def frontend_index():
-    return _frontend_file("index.html")
+async def frontend_index(request: Request):
+    return _frontend_file("index.html", request)
 
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -181,22 +197,40 @@ async def favicon():
 
 
 @app.get("/{name}", include_in_schema=False)
-async def frontend_asset(name: str):
+async def frontend_asset(name: str, request: Request):
     if name not in FRONTEND_FILES:
         return error(404, "Not Found", "NOT_FOUND")
-    return _frontend_file(name)
+    return _frontend_file(name, request)
 
 
-def _frontend_file(name: str):
+FRONTEND_CACHE_SECONDS = 300
+
+
+@lru_cache(maxsize=len(FRONTEND_FILES))
+def _load_frontend_file(name: str) -> tuple[bytes, str] | None:
+    """Read each website file from disk ONCE and keep it in memory with an ETag."""
     path = FRONTEND_DIR / name
     if not path.is_file():
+        return None
+    body = path.read_bytes()
+    return body, '"' + hashlib.sha256(body).hexdigest()[:16] + '"'
+
+
+def _frontend_file(name: str, request: Request | None = None):
+    loaded = _load_frontend_file(name)
+    if loaded is None:
         return error(404, "Frontend not found. Put index.html, styles.css and script.js in /frontend.", "NOT_FOUND")
-    return FileResponse(path, media_type=FRONTEND_FILES[name])
+    body, etag = loaded
+    headers = {"ETag": etag, "Cache-Control": f"public, max-age={FRONTEND_CACHE_SECONDS}"}
+    # Browser already has this exact version -> send nothing (304 Not Modified)
+    if request is not None and request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type=FRONTEND_FILES[name], headers=headers)
 
 
 if __name__ == "__main__":
-    import uvicorn
-
     import os
+
+    import uvicorn
 
     uvicorn.run("app.main:app", host="0.0.0.0", port=int(os.getenv("PORT", "8000")), access_log=False)

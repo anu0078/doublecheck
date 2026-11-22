@@ -4,7 +4,7 @@ import json
 
 from app import llm
 from app.engine import analyze, find_in_text
-from app.llm import build_payload, clean_llm_text, SYSTEM_INSTRUCTIONS
+from app.llm import SYSTEM_INSTRUCTIONS, build_payload, clean_llm_text
 from app.rules import run_rules
 from tests.conftest import fake_llm, run
 
@@ -133,6 +133,7 @@ def test_invalid_llm_json_falls_back(monkeypatch):
 
 def test_llm_timeout_falls_back(monkeypatch):
     import asyncio
+
     from app.config import settings
 
     class SlowModels:

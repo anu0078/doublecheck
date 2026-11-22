@@ -2,8 +2,8 @@
 so every channel uses the exact same engine and rules."""
 from dataclasses import dataclass
 
-from app import messages as M
 from app import ai_guard, upi
+from app import messages as M
 from app.engine import Analysis, analyze
 from app.llm import clean_llm_text
 from app.models import DANGEROUS, LOW
