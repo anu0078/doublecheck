@@ -75,6 +75,26 @@ It tries the real backend again on every check and switches back by itself.
 
 ---
 
+## Deploy on Google Cloud Run
+
+Needs a Google Cloud project with billing turned on (the free tier normally covers a demo).
+
+1. Open https://shell.cloud.google.com (works in a phone browser) and pick your project.
+2. Run:
+   ```bash
+   git clone https://github.com/anu0078/doublecheck && cd doublecheck && bash deploy_cloudrun.sh
+   ```
+3. Paste your Gemini key and Telegram bot token when asked. The input is hidden.
+4. After 3-5 minutes it prints your `https://doublecheck-....run.app` address.
+
+The script builds the `Dockerfile`, deploys to Mumbai (`asia-south1`), keeps one instance
+(rate limits and link codes are in memory), and connects the Telegram webhook to the Cloud
+Run address. The container runs as a non-root user.
+
+**One bot, one server:** Telegram sends messages to only ONE webhook. If the bot also runs
+on Render, remove `TELEGRAM_BOT_TOKEN` from Render (or delete that service), otherwise the
+two servers keep taking the bot from each other.
+
 ## Deploy on Render (free)
 
 `render.yaml` sets up everything: website, API and Telegram bot in one free service,
@@ -208,6 +228,8 @@ app/
   ratelimit.py     30 requests/min limiter
 bot.py             Telegram bot (python bot.py locally; webhook mode on Render)
 render.yaml        Render deploy blueprint
+Dockerfile         Container for Cloud Run
+deploy_cloudrun.sh One-command Cloud Run deploy (run in Cloud Shell)
 frontend/          Website (served at /): index.html, styles.css, script.js
 tests/             pytest suite
 demo_samples.json  Demo inputs with expected results
