@@ -7,8 +7,8 @@ Link codes live in memory only (they expire after 15 minutes anyway).
 """
 import secrets
 import sqlite3
+import threading
 import time
-from contextlib import closing
 
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"   # no 0/O, 1/I to avoid confusion
 CODE_LENGTH = 6
@@ -18,7 +18,12 @@ CODE_TTL_SECONDS = 15 * 60
 class FamilyStore:
     def __init__(self, path: str) -> None:
         self.path = path
-        with closing(sqlite3.connect(self.path)) as conn, conn:
+        # One connection reused for the life of the bot (no reconnect per query).
+        # Queries are tiny and indexed by primary key; the lock keeps it thread-safe.
+        self._conn = sqlite3.connect(self.path, check_same_thread=False)
+        self._lock = threading.Lock()
+        with self._lock, self._conn as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS users ("
                 " chat_id INTEGER PRIMARY KEY,"
@@ -33,8 +38,11 @@ class FamilyStore:
 
     def _run(self, sql: str, params: tuple = ()) -> list[tuple]:
         # parameterised queries only (no string formatting -> no SQL injection)
-        with closing(sqlite3.connect(self.path)) as conn, conn:
+        with self._lock, self._conn as conn:
             return conn.execute(sql, params).fetchall()
+
+    def close(self) -> None:
+        self._conn.close()
 
     def get_lang(self, chat_id: int) -> str:
         rows = self._run("SELECT lang FROM users WHERE chat_id = ?", (chat_id,))
