@@ -327,7 +327,7 @@ function initScrollAndNav() {
   );
   revealSections.forEach((sec) => revealObs.observe(sec));
 
-  const navTargets = ["home", "checker", "practice", "team"];
+  const navTargets = ["home", "checker", "practice"];
   const navObs = new IntersectionObserver(
     (entries) => {
       entries.forEach((entry) => {
